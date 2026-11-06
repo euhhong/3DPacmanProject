@@ -24,7 +24,7 @@ public static class PacmanSceneSetup
 
         maze.gameObject.name = "Maze";
         maze.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
-        maze.BuildMaze();
+        if (!PrefabUtility.IsPartOfAnyPrefab(maze.gameObject)) maze.BuildMaze(); // 프리팹이면 저장된 미로 유지
 
         PlayerMove player = Object.FindAnyObjectByType<PlayerMove>();
         if (player != null)

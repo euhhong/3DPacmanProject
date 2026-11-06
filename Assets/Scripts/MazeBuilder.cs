@@ -66,15 +66,19 @@ public class MazeBuilder : MonoBehaviour
     {
         if (!Application.isPlaying) return;
 
-        BuildMaze();
+        // 미리 만들어 둔(또는 프리팹에 저장된) 미로가 최신이면 그대로 쓴다.
+        if (NeedsRebuild()) BuildMaze();
         Physics.SyncTransforms(); // 같은 프레임의 이동 판정이 벽을 바로 인식하도록
     }
+
+    private bool NeedsRebuild() => transform.childCount == 0 || builtSignature != ComputeSignature();
 
 #if UNITY_EDITOR
     private void OnEnable() => ScheduleEditorRebuild();
     private void OnValidate() => ScheduleEditorRebuild();
 
     // 에디터에서는 미로가 없거나 배치도/설정이 바뀌었을 때만 다시 만든다.
+    // 프리팹(인스턴스/에셋/프리팹 편집 화면)은 저장된 결과를 유지하고 건드리지 않는다.
     private void ScheduleEditorRebuild()
     {
         if (Application.isPlaying) return;
@@ -82,18 +86,31 @@ public class MazeBuilder : MonoBehaviour
         UnityEditor.EditorApplication.delayCall += () =>
         {
             if (this == null || Application.isPlaying) return;
-            if (transform.childCount > 0 && builtSignature == ComputeSignature()) return;
+            if (IsPrefabRelated() || !NeedsRebuild()) return;
             BuildMaze();
         };
+    }
+
+    private bool IsPrefabRelated()
+    {
+        return UnityEditor.PrefabUtility.IsPartOfAnyPrefab(gameObject)
+               || UnityEditor.SceneManagement.PrefabStageUtility.GetPrefabStage(gameObject) != null;
     }
 #endif
 
     [ContextMenu("Build Maze")]
     public void BuildMaze()
     {
+#if UNITY_EDITOR
+        if (!Application.isPlaying && IsPrefabRelated())
+        {
+            Debug.LogWarning("MazeBuilder: 프리팹은 직접 다시 만들 수 없습니다. Tools > Pacman > Save Maze Prefab 을 실행하세요.");
+            return;
+        }
+#endif
         ClearChildren();
-        neonMaterial = CreateNeonMaterial(glowColor, glowIntensity);
-        coreMaterial = CreateNeonMaterial(Color.Lerp(glowColor, Color.white, tubeCoreWhiteness), tubeCoreIntensity);
+        neonMaterial = CreateNeonMaterial("Maze_Neon", glowColor, glowIntensity);
+        coreMaterial = CreateNeonMaterial("Maze_NeonCore", Color.Lerp(glowColor, Color.white, tubeCoreWhiteness), tubeCoreIntensity);
 
         BuildFloor();
         BuildWallBodies(CreateChild("Walls"));
@@ -120,7 +137,7 @@ public class MazeBuilder : MonoBehaviour
 
     private void BuildFloor()
     {
-        GameObject floor = CreateBlock("Floor", transform, CreateLitMaterial(floorBlackColor, 0.85f), true);
+        GameObject floor = CreateBlock("Floor", transform, CreateLitMaterial("Maze_Floor", floorBlackColor, 0.85f), true);
         floor.transform.localPosition = new Vector3(0f, -0.05f, 0f);
         floor.transform.localScale = new Vector3(
             (Cols + floorMarginCells * 2) * gridCellSize, 0.1f, (Rows + floorMarginCells * 2) * gridCellSize);
@@ -129,7 +146,7 @@ public class MazeBuilder : MonoBehaviour
     // 가로로 이어진 벽 칸은 하나의 블록으로 합친다.
     private void BuildWallBodies(Transform parent)
     {
-        Material bodyMaterial = CreateLitMaterial(wallBlackColor, 0.3f);
+        Material bodyMaterial = CreateLitMaterial("Maze_Wall", wallBlackColor, 0.3f);
 
         for (int row = 0; row < Rows; row++)
         {
@@ -302,7 +319,7 @@ public class MazeBuilder : MonoBehaviour
     }
 
     // 조명의 영향을 받지 않고 HDR 밝기로 빛나는 머티리얼 (Bloom 대상)
-    private static Material CreateNeonMaterial(Color color, float intensity)
+    private static Material CreateNeonMaterial(string materialName, Color color, float intensity)
     {
         Shader shader = Shader.Find("Universal Render Pipeline/Unlit");
         if (shader == null) shader = Shader.Find("Unlit/Color");
@@ -310,18 +327,18 @@ public class MazeBuilder : MonoBehaviour
         Color hdr = color * intensity;
         hdr.a = 1f;
 
-        Material material = new Material(shader);
+        Material material = new Material(shader) { name = materialName };
         material.SetColor("_BaseColor", hdr);
         material.color = hdr;
         return material;
     }
 
-    private static Material CreateLitMaterial(Color color, float smoothness)
+    private static Material CreateLitMaterial(string materialName, Color color, float smoothness)
     {
         Shader shader = Shader.Find("Universal Render Pipeline/Lit");
         if (shader == null) shader = Shader.Find("Standard");
 
-        Material material = new Material(shader);
+        Material material = new Material(shader) { name = materialName };
         material.SetColor("_BaseColor", color);
         material.color = color;
         material.SetFloat("_Smoothness", smoothness);
