@@ -62,6 +62,20 @@ public class MazeBuilder : MonoBehaviour
     private int Rows => Layout.Length;
     private int Cols => Layout[0].Length;
 
+    // ---------- 다른 스크립트(코인 배치 등)가 미로 칸 정보를 읽기 위한 공개 API ----------
+
+    public int RowCount => Rows;
+    public int ColumnCount => Cols;
+    public Vector2Int StartCell => new Vector2Int(Cols / 2, Rows / 2); // (x = 열, y = 행)
+
+    // 배치도나 칸 크기가 바뀌었는지 비교할 때 쓰는 값
+    public string LayoutSignature => string.Join("|", Layout) + gridCellSize;
+
+    public bool IsOpenCell(int row, int col) => IsOpen(row, col);
+
+    // 칸 중앙의 바닥 위치(월드 좌표)
+    public Vector3 CellWorldPosition(int row, int col) => transform.TransformPoint(CellCenter(row, col));
+
     private void Awake()
     {
         if (!Application.isPlaying) return;
