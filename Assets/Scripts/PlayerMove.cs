@@ -1,21 +1,132 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
 
-// 오브젝트가 바라보는 방향(로컬 Z축)으로 계속 전진하고, A/D 키로 90도씩 방향을 바꾼다.
+// 칸(그리드) 단위로 이동한다. 칸 크기와 시작 위치는 씬의 MazeBuilder에서 가져온다.
+// - 정지 상태로 시작, WASD로 방향을 정하면 그 방향으로 계속 이동
+// - 입력은 저장해 두었다가 칸 중앙에 도착했을 때 그 방향이 열려 있으면 꺾음
+// - 막힌 방향 입력은 보류하고 원래 방향으로 계속 진행
+// - 정면 칸이 벽이면 칸 중앙에서 정지
+// - 반대 방향 입력은 즉시 되돌아감
 public class PlayerMove : MonoBehaviour
 {
-    [SerializeField] private float moveSpeed = 5f;
+    [SerializeField] private float moveSpeed = 6f;
+
+    private float cellSize = 1f;
+    private Vector3 moveDirection = Vector3.zero;
+    private Vector3 bufferedDirection = Vector3.zero;
+    private Vector3 targetPosition;
+
+    private void Awake()
+    {
+        // 이동은 이 스크립트가 직접 하므로 물리(중력/충돌 반응)는 끈다.
+        if (TryGetComponent(out Rigidbody body))
+        {
+            body.useGravity = false;
+            body.isKinematic = true;
+        }
+    }
+
+    private void Start()
+    {
+        float halfHeight = TryGetComponent(out Collider col) ? col.bounds.extents.y : 0.5f;
+
+        MazeBuilder maze = FindAnyObjectByType<MazeBuilder>();
+        if (maze != null)
+        {
+            cellSize = maze.CellSize;
+            transform.position = maze.StartCellPosition + Vector3.up * halfHeight;
+        }
+        else
+        {
+            Debug.LogWarning("PlayerMove: 씬에서 MazeBuilder를 찾을 수 없어 현재 위치에서 시작합니다.");
+        }
+
+        transform.rotation = Quaternion.identity;
+        targetPosition = transform.position;
+    }
 
     private void Update()
     {
-        Keyboard keyboard = Keyboard.current;
-        if (keyboard != null)
+        ReadInput();
+
+        if (moveDirection == Vector3.zero)
         {
-            // 누른 순간 한 번만 회전
-            if (keyboard.aKey.wasPressedThisFrame) transform.Rotate(0f, -90f, 0f);
-            if (keyboard.dKey.wasPressedThisFrame) transform.Rotate(0f, 90f, 0f);
+            TryStartMove();
+            return;
         }
 
-        transform.Translate(Vector3.forward * moveSpeed * Time.deltaTime, Space.Self);
+        float remaining = moveSpeed * Time.deltaTime;
+        while (remaining > 0f && moveDirection != Vector3.zero)
+        {
+            float distance = Vector3.Distance(transform.position, targetPosition);
+            if (distance > remaining)
+            {
+                transform.position = Vector3.MoveTowards(transform.position, targetPosition, remaining);
+                break;
+            }
+
+            // 칸 중앙 도착: 남은 거리는 다음 칸 이동에 이어서 사용
+            transform.position = targetPosition;
+            remaining -= distance;
+            ChooseNextDirection();
+        }
+    }
+
+    private void ReadInput()
+    {
+        Keyboard keyboard = Keyboard.current;
+        if (keyboard == null) return;
+
+        Vector3 input = Vector3.zero;
+        if (keyboard.wKey.wasPressedThisFrame) input = Vector3.forward;
+        else if (keyboard.sKey.wasPressedThisFrame) input = Vector3.back;
+        else if (keyboard.aKey.wasPressedThisFrame) input = Vector3.left;
+        else if (keyboard.dKey.wasPressedThisFrame) input = Vector3.right;
+        if (input == Vector3.zero) return;
+
+        if (moveDirection != Vector3.zero && input == -moveDirection)
+        {
+            // 반대 방향은 칸 중앙을 기다리지 않고 바로 되돌아간다.
+            targetPosition -= moveDirection * cellSize;
+            moveDirection = input;
+            bufferedDirection = Vector3.zero;
+            return;
+        }
+
+        bufferedDirection = input == moveDirection ? Vector3.zero : input;
+    }
+
+    private void TryStartMove()
+    {
+        if (bufferedDirection == Vector3.zero || IsWall(bufferedDirection)) return;
+
+        moveDirection = bufferedDirection;
+        bufferedDirection = Vector3.zero;
+        targetPosition = transform.position + moveDirection * cellSize;
+    }
+
+    private void ChooseNextDirection()
+    {
+        if (bufferedDirection != Vector3.zero && !IsWall(bufferedDirection))
+        {
+            moveDirection = bufferedDirection;
+            bufferedDirection = Vector3.zero;
+        }
+        else if (IsWall(moveDirection))
+        {
+            moveDirection = Vector3.zero; // 정면이 막혀 정지 (보류된 입력은 유지)
+            return;
+        }
+
+        targetPosition = transform.position + moveDirection * cellSize;
+    }
+
+    // 현재 칸에서 direction 쪽 옆 칸에 벽(Trigger가 아닌 Collider)이 있는지 검사한다.
+    // 높이는 얇게 잡아 바닥은 벽으로 치지 않는다.
+    private bool IsWall(Vector3 direction)
+    {
+        Vector3 nextCell = transform.position + direction * cellSize;
+        Vector3 halfExtents = new Vector3(cellSize * 0.4f, 0.1f, cellSize * 0.4f);
+        return Physics.CheckBox(nextCell, halfExtents, Quaternion.identity, ~0, QueryTriggerInteraction.Ignore);
     }
 }
