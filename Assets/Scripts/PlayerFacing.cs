@@ -23,7 +23,8 @@ public class PlayerFacing : MonoBehaviour
         delta.y = 0f;
         lastPosition = transform.position;
 
-        if (delta.sqrMagnitude > 0.000001f)
+        // 아주 작은 떨림과 터널 순간이동(한 프레임에 크게 점프)은 방향 계산에서 뺀다.
+        if (delta.sqrMagnitude > 0.000001f && delta.sqrMagnitude < 4f)
         {
             targetRotation = Quaternion.LookRotation(delta.normalized) * Quaternion.Euler(0f, yawOffset, 0f);
         }

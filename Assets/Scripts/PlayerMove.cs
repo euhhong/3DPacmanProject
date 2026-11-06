@@ -11,6 +11,10 @@ public class PlayerMove : MonoBehaviour
 {
     [SerializeField] private float moveSpeed = 6f;
 
+    // 현재 진행 방향 (정지 시 zero). 방해꾼의 예측 추적 등에 쓰인다.
+    public Vector3 MoveDirection => moveDirection;
+
+    private MazeBuilder maze;
     private float cellSize = 1f;
     private Vector3 moveDirection = Vector3.zero;
     private Vector3 bufferedDirection = Vector3.zero;
@@ -30,7 +34,7 @@ public class PlayerMove : MonoBehaviour
     {
         float halfHeight = TryGetComponent(out Collider col) ? col.bounds.extents.y : 0.5f;
 
-        MazeBuilder maze = FindAnyObjectByType<MazeBuilder>();
+        maze = FindAnyObjectByType<MazeBuilder>();
         if (maze != null)
         {
             cellSize = maze.CellSize;
@@ -107,6 +111,19 @@ public class PlayerMove : MonoBehaviour
 
     private void ChooseNextDirection()
     {
+        // 터널: 미로 바깥 한 칸까지 나가면 반대편 바깥 한 칸으로 순간이동한 뒤 같은 방향으로 계속 들어간다.
+        if (maze != null && maze.TryWrapTunnel(transform.position, out Vector3 wrapped))
+        {
+            transform.position = wrapped;
+        }
+
+        // 미로 바깥(터널 안)에서는 방향을 꺾거나 멈추지 않는다.
+        if (maze != null && !maze.IsInsideGrid(transform.position))
+        {
+            targetPosition = transform.position + moveDirection * cellSize;
+            return;
+        }
+
         if (bufferedDirection != Vector3.zero && !IsWall(bufferedDirection))
         {
             moveDirection = bufferedDirection;

@@ -39,7 +39,7 @@ public class MazeBuilder : MonoBehaviour
         "#.#.###.#####.#.#.#####.###.#.#",
         "#...#...#...#.#.#.#...#...#...#",
         "#.###.###.#.#.#.#.#.#.###.###.#",
-        "#.........#...#.#...#.........#",
+        "..........#...#.#...#..........", // 양 끝 = 좌우로 이어지는 터널
         "#.###.###.#.#.#.#.#.#.###.###.#",
         "#...#...#...#.#.#.#...#...#...#",
         "#.#.###.#####.#.#.#####.###.#.#",
@@ -73,8 +73,51 @@ public class MazeBuilder : MonoBehaviour
 
     public bool IsOpenCell(int row, int col) => IsOpen(row, col);
 
+    // 걸어갈 수 있는 칸인지: 통로이거나, 터널 입구 바로 바깥 칸
+    public bool IsWalkableCell(int row, int col)
+    {
+        if (row < 0 || row >= Rows) return false;
+        if (col < 0) return col == -1 && IsOpen(row, 0);
+        if (col >= Cols) return col == Cols && IsOpen(row, Cols - 1);
+        return IsOpen(row, col);
+    }
+
     // 칸 중앙의 바닥 위치(월드 좌표)
     public Vector3 CellWorldPosition(int row, int col) => transform.TransformPoint(CellCenter(row, col));
+
+    // 저장된 미로가 현재 배치도/설정과 같은지 (프리팹 갱신 판단용)
+    public bool IsUpToDate => !NeedsRebuild();
+
+    // 월드 위치가 속한 칸 번호 (배치도 바깥이면 범위를 벗어난 값)
+    public Vector2Int WorldToCell(Vector3 worldPosition)
+    {
+        Vector3 local = transform.InverseTransformPoint(worldPosition);
+        int col = Mathf.RoundToInt(local.x / gridCellSize + (Cols - 1) * 0.5f);
+        int row = Mathf.RoundToInt((Rows - 1) * 0.5f - local.z / gridCellSize);
+        return new Vector2Int(col, row);
+    }
+
+    public bool IsInsideGrid(Vector3 worldPosition)
+    {
+        Vector2Int cell = WorldToCell(worldPosition);
+        return IsInside(cell.y, cell.x);
+    }
+
+    // 좌우 터널: 미로 바깥 한 칸까지 나가면 반대편 바깥 한 칸으로 옮긴다. (높이는 유지)
+    public bool TryWrapTunnel(Vector3 worldPosition, out Vector3 wrappedPosition)
+    {
+        wrappedPosition = worldPosition;
+        Vector2Int cell = WorldToCell(worldPosition);
+
+        int wrappedCol;
+        if (cell.x < 0) wrappedCol = Cols;
+        else if (cell.x >= Cols) wrappedCol = -1;
+        else return false;
+
+        wrappedPosition = transform.TransformPoint(CellCenter(cell.y, wrappedCol));
+        wrappedPosition.y = worldPosition.y;
+        return true;
+    }
 
     private void Awake()
     {
@@ -245,6 +288,7 @@ public class MazeBuilder : MonoBehaviour
     // 벽이면 안쪽 모서리 → 꺾이는 다른 선과 만나도록 늘린다.
     private float EndOffset(int neighborRow, int neighborCol)
     {
+        if (!IsInside(neighborRow, neighborCol)) return 0f; // 터널 입구: 미로 가장자리에서 딱 끝냄
         return IsWall(neighborRow, neighborCol) ? -glowLineInset : glowLineInset;
     }
 

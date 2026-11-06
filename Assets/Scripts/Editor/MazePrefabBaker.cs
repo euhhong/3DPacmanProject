@@ -31,8 +31,12 @@ public static class MazePrefabBaker
     private static void AutoBake()
     {
         if (EditorApplication.isPlayingOrWillChangePlaymode) return;
-        if (AssetDatabase.LoadAssetAtPath<GameObject>(PrefabPath) != null) return;
-        if (Object.FindAnyObjectByType<MazeBuilder>() == null) return;
+        MazeBuilder maze = Object.FindAnyObjectByType<MazeBuilder>();
+        if (maze == null) return;
+
+        // 프리팹이 이미 있고 배치도/설정도 최신이면 건너뛴다. (배치도를 바꾸면 자동으로 다시 저장)
+        bool prefabExists = AssetDatabase.LoadAssetAtPath<GameObject>(PrefabPath) != null;
+        if (prefabExists && maze.IsUpToDate) return;
 
         SaveMazePrefab();
     }
